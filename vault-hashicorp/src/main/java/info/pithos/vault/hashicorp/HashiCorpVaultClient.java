@@ -6,7 +6,7 @@ import com.bettercloud.vault.response.LogicalResponse;
 import info.pithos.vault.AbstractVaultClient;
 import info.pithos.runtime.core.context.ApplicationContext;
 import info.pithos.runtime.model.config.Config.HashiCorpVaultConfigs;
-import info.pithos.runtime.model.protocol.http.RequestContextOuterClass.RequestContext;
+import info.pithos.runtime.model.protocol.http.Context.RequestContext;
 
 import java.util.Collections;
 import java.util.List;
