@@ -2,7 +2,7 @@ package info.pithos.vault;
 
 import info.pithos.runtime.core.context.ApplicationContext;
 import info.pithos.runtime.core.util.Util;
-import info.pithos.runtime.model.protocol.http.Context.RequestContext;
+import info.pithos.runtime.model.protocol.Context.RequestContext;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;

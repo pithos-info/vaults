@@ -12,7 +12,7 @@ import com.google.protobuf.ByteString;
 import info.pithos.vault.AbstractVaultClient;
 import info.pithos.runtime.core.context.ApplicationContext;
 import info.pithos.runtime.model.config.Config.GcpSecretManagerConfigs;
-import info.pithos.runtime.model.protocol.http.Context.RequestContext;
+import info.pithos.runtime.model.protocol.Context.RequestContext;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
