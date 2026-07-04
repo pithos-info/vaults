@@ -45,6 +45,60 @@ Config proto: `GcpSecretManagerConfigs` (`projectId`)
 
 ---
 
+## Metrics
+
+Every vault operation emits infra-tier metrics automatically via `MetricsCommitter`. No caller instrumentation required.
+
+### VaultOperation
+
+| Enum value | Metric stem |
+|---|---|
+| `GET_SECRET` | `vault.get.secret` |
+| `SET_SECRET` | `vault.set.secret` |
+| `DELETE_SECRET` | `vault.delete.secret` |
+| `SECRET_EXISTS` | `vault.secret.exists` |
+| `LIST_SECRETS` | `vault.list.secrets` |
+
+`GET_SECRET` covers both string and bytes variants — the delegation pass-throughs (`getSecret(rc, name)` → versioned, `setSecret` → `setSecretBytes` in GCP) are not instrumented separately to avoid double-counting.
+
+### What is emitted per operation
+
+Each operation fires **4 metric events** across two levels:
+
+| Level | `componentId` | Example |
+|---|---|---|
+| Per secret | Secret name passed to the operation | `"stripe-api-key"` |
+| Provider aggregate | Provider name | `"gcp-secretmanager"` or `"hashicorp-vault"` |
+
+At each level:
+1. `{op}.latency` — `MetricUnit.MS`
+2. `{op}.success` / `{op}.failure` / `{op}.timeout` — `MetricUnit.COUNT`
+
+| Field | Value |
+|---|---|
+| `componentType` | `VAULT` |
+| `componentId` | `name` parameter (for `listSecrets`: the prefix, or `"*"` when listing all) |
+| `componentProvider` | `"gcp-secretmanager"` or `"hashicorp-vault"` |
+| `RequestContext` | passed through from the caller |
+
+### Example: `getSecret(rc, "stripe-api-key")` on GCP Secret Manager
+
+| metric | unit | componentId | componentProvider |
+|---|---|---|---|
+| `vault.get.secret.latency` | MS | `stripe-api-key` | `gcp-secretmanager` |
+| `vault.get.secret.success` | COUNT | `stripe-api-key` | `gcp-secretmanager` |
+| `vault.get.secret.latency` | MS | `gcp-secretmanager` | `gcp-secretmanager` |
+| `vault.get.secret.success` | COUNT | `gcp-secretmanager` | `gcp-secretmanager` |
+
+### componentProvider values
+
+| Implementation | `componentProvider` |
+|---|---|
+| `GcpSecretManagerClient` | `"gcp-secretmanager"` |
+| `HashiCorpVaultClient` | `"hashicorp-vault"` |
+
+---
+
 ## Usage
 
 All clients follow the same lifecycle pattern used across the Pithos data layer:
