@@ -17,7 +17,12 @@
 package info.pithos.vault;
 
 import info.pithos.runtime.core.context.ApplicationContext;
+import info.pithos.runtime.core.metrics.InfraOperation;
+import info.pithos.runtime.core.metrics.MetricsCommitter;
 import info.pithos.runtime.core.util.Util;
+import info.pithos.runtime.model.metrics.Metrics.ComponentType;
+import info.pithos.runtime.model.metrics.Metrics.MetricEvent;
+import info.pithos.runtime.model.metrics.Metrics.MetricUnit;
 import info.pithos.runtime.model.protocol.Context.RequestContext;
 
 import java.util.concurrent.Callable;
@@ -31,6 +36,8 @@ public abstract class AbstractVaultClient implements VaultClient {
         if (context == null) throw new IllegalArgumentException("context = null");
         this.context = context;
     }
+
+    protected abstract String componentProvider();
 
     protected String createSecretPath(RequestContext requestContext, String name) {
         return Util.createKey(requestContext, createSecretPathName(name));
@@ -48,5 +55,29 @@ public abstract class AbstractVaultClient implements VaultClient {
 
     protected String createSecretPathName(String name) {
         return context.getSystemContext().getServiceName() + ":" + name;
+    }
+
+    // ── Metrics helpers ───────────────────────────────────────────────────────
+
+    protected void recordOp(RequestContext rc, String secretName, VaultOperation op,
+                            long startMs, Throwable ex) {
+        MetricsCommitter mc = context.getMetricsCommitter();
+        if (mc == null) return;
+        long elapsedMs = System.currentTimeMillis() - startMs;
+        String provider = componentProvider();
+        emitPair(mc, rc, secretName, provider, op, elapsedMs, ex);
+        emitPair(mc, rc, provider, provider, op, elapsedMs, ex);
+    }
+
+    private static void emitPair(MetricsCommitter mc, RequestContext rc, String componentId,
+                                  String provider, InfraOperation op, long elapsedMs, Throwable ex) {
+        mc.record(rc, MetricEvent.newBuilder()
+            .setMetric(op.latency()).setUnit(MetricUnit.MS).setValue(elapsedMs)
+            .setComponentType(ComponentType.VAULT).setComponentId(componentId).setComponentProvider(provider)
+            .build());
+        mc.record(rc, MetricEvent.newBuilder()
+            .setMetric(InfraOperation.outcome(op, ex)).setUnit(MetricUnit.COUNT).setValue(1.0)
+            .setComponentType(ComponentType.VAULT).setComponentId(componentId).setComponentProvider(provider)
+            .build());
     }
 }

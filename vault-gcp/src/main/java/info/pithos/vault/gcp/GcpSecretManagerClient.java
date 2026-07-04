@@ -26,6 +26,7 @@ import com.google.cloud.secretmanager.v1.SecretPayload;
 import com.google.cloud.secretmanager.v1.SecretVersionName;
 import com.google.protobuf.ByteString;
 import info.pithos.vault.AbstractVaultClient;
+import info.pithos.vault.VaultOperation;
 import info.pithos.runtime.core.context.ApplicationContext;
 import info.pithos.runtime.model.config.Config.GcpSecretManagerConfigs;
 import info.pithos.runtime.model.protocol.Context.RequestContext;
@@ -72,12 +73,13 @@ public class GcpSecretManagerClient extends AbstractVaultClient {
 
     @Override
     public CompletableFuture<String> getSecret(RequestContext requestContext, String name, String version) {
+        long startMs = System.currentTimeMillis();
         return submitAsync(() -> {
             String ver = (version != null && !version.isEmpty()) ? version : "latest";
             SecretVersionName versionName = SecretVersionName.of(configs.getProjectId(), toSecretId(requestContext, name), ver);
             AccessSecretVersionResponse response = client().accessSecretVersion(versionName);
             return response.getPayload().getData().toStringUtf8();
-        });
+        }).whenComplete((v, ex) -> recordOp(requestContext, name, VaultOperation.GET_SECRET, startMs, ex));
     }
 
     @Override
@@ -87,12 +89,13 @@ public class GcpSecretManagerClient extends AbstractVaultClient {
 
     @Override
     public CompletableFuture<byte[]> getSecretBytes(RequestContext requestContext, String name, String version) {
+        long startMs = System.currentTimeMillis();
         return submitAsync(() -> {
             String ver = (version != null && !version.isEmpty()) ? version : "latest";
             SecretVersionName versionName = SecretVersionName.of(configs.getProjectId(), toSecretId(requestContext, name), ver);
             AccessSecretVersionResponse response = client().accessSecretVersion(versionName);
             return response.getPayload().getData().toByteArray();
-        });
+        }).whenComplete((v, ex) -> recordOp(requestContext, name, VaultOperation.GET_SECRET, startMs, ex));
     }
 
     @Override
@@ -102,6 +105,7 @@ public class GcpSecretManagerClient extends AbstractVaultClient {
 
     @Override
     public CompletableFuture<Void> setSecretBytes(RequestContext requestContext, String name, byte[] value) {
+        long startMs = System.currentTimeMillis();
         return submitAsync(() -> {
             String secretId = toSecretId(requestContext, name);
             ensureSecretExists(secretId);
@@ -110,21 +114,23 @@ public class GcpSecretManagerClient extends AbstractVaultClient {
                 .setData(ByteString.copyFrom(value))
                 .build();
             client().addSecretVersion(secretName, payload);
-            return null;
-        });
+            return (Void) null;
+        }).whenComplete((v, ex) -> recordOp(requestContext, name, VaultOperation.SET_SECRET, startMs, ex));
     }
 
     @Override
     public CompletableFuture<Boolean> deleteSecret(RequestContext requestContext, String name) {
+        long startMs = System.currentTimeMillis();
         return submitAsync(() -> {
             SecretName secretName = SecretName.of(configs.getProjectId(), toSecretId(requestContext, name));
             client().deleteSecret(secretName);
             return true;
-        });
+        }).whenComplete((v, ex) -> recordOp(requestContext, name, VaultOperation.DELETE_SECRET, startMs, ex));
     }
 
     @Override
     public CompletableFuture<Boolean> secretExists(RequestContext requestContext, String name) {
+        long startMs = System.currentTimeMillis();
         return submitAsync(() -> {
             try {
                 SecretName secretName = SecretName.of(configs.getProjectId(), toSecretId(requestContext, name));
@@ -133,11 +139,13 @@ public class GcpSecretManagerClient extends AbstractVaultClient {
             } catch (com.google.api.gax.rpc.NotFoundException e) {
                 return false;
             }
-        });
+        }).whenComplete((v, ex) -> recordOp(requestContext, name, VaultOperation.SECRET_EXISTS, startMs, ex));
     }
 
     @Override
     public CompletableFuture<List<String>> listSecrets(RequestContext requestContext, String prefix) {
+        long startMs = System.currentTimeMillis();
+        String componentId = (prefix != null && !prefix.isEmpty()) ? prefix : "*";
         return submitAsync(() -> {
             ProjectName projectName = ProjectName.of(configs.getProjectId());
             String filter = (prefix != null && !prefix.isEmpty()) ? "name:" + sanitize(prefix) : "";
@@ -155,10 +163,13 @@ public class GcpSecretManagerClient extends AbstractVaultClient {
                 names.add(fullName.substring(fullName.lastIndexOf('/') + 1));
             }
             return Collections.unmodifiableList(names);
-        });
+        }).whenComplete((v, ex) -> recordOp(requestContext, componentId, VaultOperation.LIST_SECRETS, startMs, ex));
     }
 
     // --- Helpers ---
+
+    @Override
+    protected String componentProvider() { return "gcp-secretmanager"; }
 
     @Override
     protected String createSecretPath(RequestContext requestContext, String name) {

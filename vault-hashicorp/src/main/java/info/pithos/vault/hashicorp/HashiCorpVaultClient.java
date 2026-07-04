@@ -20,6 +20,7 @@ import com.bettercloud.vault.Vault;
 import com.bettercloud.vault.VaultConfig;
 import com.bettercloud.vault.response.LogicalResponse;
 import info.pithos.vault.AbstractVaultClient;
+import info.pithos.vault.VaultOperation;
 import info.pithos.runtime.core.context.ApplicationContext;
 import info.pithos.runtime.model.config.Config.HashiCorpVaultConfigs;
 import info.pithos.runtime.model.protocol.Context.RequestContext;
@@ -66,11 +67,12 @@ public class HashiCorpVaultClient extends AbstractVaultClient {
 
     @Override
     public CompletableFuture<String> getSecret(RequestContext requestContext, String name) {
+        long startMs = System.currentTimeMillis();
         return submitAsync(() -> {
             LogicalResponse response = vault().logical().read(kvPath(requestContext, name));
             Map<String, String> data = response.getData();
             return data != null ? data.get("value") : null;
-        });
+        }).whenComplete((v, ex) -> recordOp(requestContext, name, VaultOperation.GET_SECRET, startMs, ex));
     }
 
     @Override
@@ -92,10 +94,11 @@ public class HashiCorpVaultClient extends AbstractVaultClient {
 
     @Override
     public CompletableFuture<Void> setSecret(RequestContext requestContext, String name, String value) {
+        long startMs = System.currentTimeMillis();
         return submitAsync(() -> {
             vault().logical().write(kvPath(requestContext, name), Map.of("value", value));
-            return null;
-        });
+            return (Void) null;
+        }).whenComplete((v, ex) -> recordOp(requestContext, name, VaultOperation.SET_SECRET, startMs, ex));
     }
 
     @Override
@@ -105,14 +108,16 @@ public class HashiCorpVaultClient extends AbstractVaultClient {
 
     @Override
     public CompletableFuture<Boolean> deleteSecret(RequestContext requestContext, String name) {
+        long startMs = System.currentTimeMillis();
         return submitAsync(() -> {
             vault().logical().delete(kvPath(requestContext, name));
             return true;
-        });
+        }).whenComplete((v, ex) -> recordOp(requestContext, name, VaultOperation.DELETE_SECRET, startMs, ex));
     }
 
     @Override
     public CompletableFuture<Boolean> secretExists(RequestContext requestContext, String name) {
+        long startMs = System.currentTimeMillis();
         return submitAsync(() -> {
             try {
                 LogicalResponse resp = vault().logical().read(kvPath(requestContext, name));
@@ -121,18 +126,23 @@ public class HashiCorpVaultClient extends AbstractVaultClient {
             } catch (Exception e) {
                 return false;
             }
-        });
+        }).whenComplete((v, ex) -> recordOp(requestContext, name, VaultOperation.SECRET_EXISTS, startMs, ex));
     }
 
     @Override
     public CompletableFuture<List<String>> listSecrets(RequestContext requestContext, String prefix) {
+        long startMs = System.currentTimeMillis();
+        String componentId = (prefix != null && !prefix.isEmpty()) ? prefix : "*";
         return submitAsync(() -> {
             String listPath = mountPath() + (prefix != null && !prefix.isEmpty() ? "/" + prefix : "");
             LogicalResponse resp = vault().logical().list(listPath);
             List<String> keys = resp.getListData();
-            return keys != null ? keys : Collections.emptyList();
-        });
+            return keys != null ? keys : Collections.<String>emptyList();
+        }).whenComplete((v, ex) -> recordOp(requestContext, componentId, VaultOperation.LIST_SECRETS, startMs, ex));
     }
+
+    @Override
+    protected String componentProvider() { return "hashicorp-vault"; }
 
     private String kvPath(RequestContext requestContext, String name) {
         return mountPath() + "/" + createSecretPath(requestContext, name);
