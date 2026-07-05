@@ -16,7 +16,7 @@
 
 package info.pithos.vault.gcp;
 
-import info.pithos.vault.VaultClient;
+import info.pithos.vault.VaultStorage;
 import info.pithos.runtime.core.context.ApplicationContext;
 import info.pithos.runtime.core.context.ServiceModule;
 
@@ -52,7 +52,7 @@ public final class GcpSecretManagerModule extends ServiceModule {
     @Override
     protected void configure() {
         super.configure();
-        super.bind(VaultClient.class).toInstance(this.client);
+        super.bind(VaultStorage.class).toInstance(this.client);
         super.bind(GcpSecretManagerClient.class).toInstance(this.client);
     }
 }

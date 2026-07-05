@@ -16,13 +16,18 @@
 
 package info.pithos.vault;
 
-import info.pithos.runtime.core.context.ServiceLifeCycle;
+import info.pithos.runtime.core.vault.VaultClient;
 import info.pithos.runtime.model.protocol.Context.RequestContext;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-public interface VaultClient extends ServiceLifeCycle {
+/**
+ * Full vault interface — extends VaultClient (credential resolution) with CRUD
+ * operations for tooling. Implementations inherit metrics and logging from
+ * AbstractVaultClient for both credential resolution and secret management.
+ */
+public interface VaultStorage extends VaultClient {
 
   // --- Read ---
 

@@ -21,6 +21,8 @@ import info.pithos.runtime.core.log.ServiceLogger;
 import info.pithos.runtime.core.metrics.InfraOperation;
 import info.pithos.runtime.core.metrics.MetricsCommitter;
 import info.pithos.runtime.core.util.Util;
+import info.pithos.runtime.model.config.Config.Credentials;
+import info.pithos.runtime.model.config.Config.ResolveCredential;
 import info.pithos.runtime.model.metrics.Metrics.ComponentType;
 import info.pithos.runtime.model.metrics.Metrics.MetricEvent;
 import info.pithos.runtime.model.metrics.Metrics.MetricUnit;
@@ -30,7 +32,7 @@ import info.pithos.runtime.model.protocol.Context.RequestContext;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 
-public abstract class AbstractVaultClient implements VaultClient {
+public abstract class AbstractVaultClient implements VaultStorage {
 
     protected final ApplicationContext context;
 
@@ -40,6 +42,37 @@ public abstract class AbstractVaultClient implements VaultClient {
     }
 
     protected abstract String componentProvider();
+
+    @Override
+    public Credentials resolve(ResolveCredential resolveCredential) {
+        RequestContext rc = RequestContext.getDefaultInstance();
+        String path = resolveCredential.getVaultPath();
+        Credentials.Builder b = Credentials.newBuilder();
+        switch (resolveCredential.getType()) {
+            case USER_PASSWORD:
+                b.setUser(fetchCredentialValue(rc, path + ".user"));
+                b.setPassword(fetchCredentialValue(rc, path + ".password"));
+                break;
+            case API_KEY:
+                b.setKey(fetchCredentialValue(rc, path + ".key"));
+                break;
+            case OAUTH_CLIENT:
+                b.setClientId(fetchCredentialValue(rc, path + ".clientId"));
+                b.setClientSecret(fetchCredentialValue(rc, path + ".clientSecret"));
+                break;
+            default:
+                break;
+        }
+        return b.build();
+    }
+
+    private String fetchCredentialValue(RequestContext rc, String name) {
+        try {
+            return getSecret(rc, name).join();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to resolve credential at vault path: " + name, e);
+        }
+    }
 
     protected String createSecretPath(RequestContext requestContext, String name) {
         return Util.createKey(requestContext, createSecretPathName(name));
