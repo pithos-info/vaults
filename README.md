@@ -2,6 +2,23 @@
 
 Secret management client implementations for the Pithos agent platform. Each module provides an async, Guice-injectable client for a specific secrets backend.
 
+---
+
+## Credential resolution vs. secret management
+
+There are two vault-related interfaces at different layers:
+
+| Interface | Location | Purpose |
+|---|---|---|
+| `VaultClient` | `runtime-core` | Credential resolution — `resolve(ResolveCredential) → Credentials` |
+| `VaultStorage` | `vault-api` | Full CRUD — read, write, delete, list secrets (tooling use) |
+
+`VaultStorage extends VaultClient`, so every full vault implementation also satisfies `VaultClient`. `SystemContext.resolve()` uses `VaultClient`; Guice modules bind `VaultStorage` for tooling that needs CRUD.
+
+Infrastructure clients (Postgres, Redis, Keycloak, etc.) call `systemContext.resolve(configs.getResolveCredential())` and never import from `vault-api` directly — they only depend on `runtime-core`.
+
+---
+
 ## Modules
 
 ### vault-api
@@ -9,10 +26,18 @@ Interface and abstract base for secret management. Java package: `info.pithos.va
 
 | Type | Description |
 |---|---|
-| `VaultClient` | Interface extending `ServiceLifeCycle` — read, write, delete, and list secrets |
-| `AbstractVaultClient` | Base class providing `submitAsync` via the platform `ForkJoinExecutor` and `createSecretPath` for request-context-aware key namespacing |
+| `VaultStorage` | Extends `VaultClient` (runtime-core) — adds full CRUD for tooling use |
+| `AbstractVaultClient` | Implements `VaultStorage`; provides `resolve()`, `submitAsync`, metrics, and `createSecretPath` |
 
-Operations:
+`AbstractVaultClient.resolve(ResolveCredential)` switches on `CredentialType` and fetches the appropriate fields from the vault path:
+
+| `CredentialType` | Fields fetched |
+|---|---|
+| `USER_PASSWORD` | `{vaultPath}.user`, `{vaultPath}.password` |
+| `API_KEY` | `{vaultPath}.key` |
+| `OAUTH_CLIENT` | `{vaultPath}.clientId`, `{vaultPath}.clientSecret` |
+
+CRUD operations:
 
 | Group | Methods |
 |---|---|
@@ -24,7 +49,7 @@ Operations:
 Secret names are automatically namespaced by tenant/service using `Util.createKey(requestContext, name)`, matching the same namespacing convention used across the data layer.
 
 ### vault-hashicorp
-HashiCorp Vault implementation of `VaultClient`. Java package: `info.pithos.vault.hashicorp`
+HashiCorp Vault implementation of `VaultStorage`. Java package: `info.pithos.vault.hashicorp`
 
 Uses the `bettercloud/vault-java-driver` to communicate with a HashiCorp Vault server over its HTTP API. Secrets are stored in a KV v1 mount under `{mountPath}/{namespace}/{name}` with a single `value` field. Token authentication is used; the token is supplied via config.
 
@@ -35,7 +60,7 @@ Config proto: `HashiCorpVaultConfigs` (`address`, `token`, `namespace`, `mountPa
 `mountPath` defaults to `"secret"` when not set.
 
 ### vault-gcp
-GCP Secret Manager implementation of `VaultClient`. Java package: `info.pithos.vault.gcp`
+GCP Secret Manager implementation of `VaultStorage`. Java package: `info.pithos.vault.gcp`
 
 Uses the `google-cloud-secretmanager` client library. Each logical secret maps to a GCP Secret Manager secret resource; `setSecret` / `setSecretBytes` transparently creates the secret if it does not exist, then adds a new version. Application Default Credentials are used for authentication.
 
@@ -101,31 +126,54 @@ At each level:
 
 ## Usage
 
-All clients follow the same lifecycle pattern used across the Pithos data layer:
+### Credential resolution (runtime path)
+
+Infrastructure clients use `SystemContext.resolve()` — they never import from `vault-api`. The vault implementation is selected at startup by overriding `ContextCreator.createVaultClient()`:
 
 ```java
-// 1. Create and initialise the Guice module
-HashiCorpVaultModule module = new HashiCorpVaultModule(applicationContext);
-module.init();
+// In your ContextCreator implementation
+@Override
+public VaultClient createVaultClient(ConfigMap configMap) {
+    return new HashiCorpVaultClient(applicationContext);
+    // or: return new GcpSecretManagerClient(applicationContext);
+}
+```
 
-// 2. Create an injector
-Injector injector = Guice.createInjector(module);
+Each infra client then resolves credentials uniformly:
 
-// 3. Start the client before use
-VaultClient client = injector.getInstance(VaultClient.class);
-client.start(10, TimeUnit.SECONDS).join();
+```java
+// local dev  → configs.getResolveCredential().vaultPath is blank → use direct credentials
+// vault env  → vaultPath is set → systemContext.resolve() fetches from vault
+Credentials creds = configs.getResolveCredential().getVaultPath().isBlank()
+    ? configs.getCredentials()
+    : context.getSystemContext().resolve(configs.getResolveCredential());
+```
 
-// 4. Use the client
-client.setSecret(requestContext, "api-key", "s3cr3t").join();
+### Secret CRUD (tooling path)
 
-client.getSecret(requestContext, "api-key")
-      .thenAccept(value -> System.out.println("secret: " + value));
+Vault modules bind `VaultStorage` in Guice using the same instance already held by `SystemContext` — no second connection:
 
-client.listSecrets(requestContext, "")
-      .thenAccept(names -> names.forEach(System.out::println));
+```java
+// In HashiCorpVaultModule.configure():
+bind(VaultStorage.class).toInstance(
+    (VaultStorage) context.getSystemContext().getVault()
+);
+```
 
-// 5. Shut down gracefully
-client.shutdown(10, TimeUnit.SECONDS).join();
+Tooling that needs direct secret access injects `VaultStorage`:
+
+```java
+@Inject
+public MyTool(VaultStorage vault) { ... }
+
+// Use CRUD operations
+vault.setSecret(requestContext, "api-key", "s3cr3t").join();
+
+vault.getSecret(requestContext, "api-key")
+     .thenAccept(value -> System.out.println("secret: " + value));
+
+vault.listSecrets(requestContext, "")
+     .thenAccept(names -> names.forEach(System.out::println));
 ```
 
 Swap `HashiCorpVaultModule` for `GcpSecretManagerModule` to switch backends with no changes to call sites.
