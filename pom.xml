@@ -9,6 +9,34 @@
         <version>1.0.0-SNAPSHOT</version>
         <packaging>pom</packaging>
 
+    <name>Pithos Vaults</name>
+    <description>Vault client implementations for the Pithos runtime platform</description>
+    <url>https://github.com/pithos-info/vaults</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Shilpa Varma</name>
+            <email>shilpa.varma@gmail.com</email>
+        </developer>
+        <developer>
+            <name>Shilpa Varma</name>
+            <email>shilpa@geekrox.com</email>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/pithos-info/vaults.git</connection>
+        <developerConnection>scm:git:ssh://github.com/pithos-info/vaults.git</developerConnection>
+        <url>https://github.com/pithos-info/vaults</url>
+    </scm>
+
     <modules>
         <module>vault-api</module>
         <module>vault-hashicorp</module>
